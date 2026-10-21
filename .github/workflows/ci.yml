@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Lint (ruff)
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+
+      - name: Type check (mypy, soft fail)
+        run: uv run mypy src || true
+
+      - name: Test with coverage
+        run: uv run pytest --cov
+
+      - name: Enforce coverage threshold
+        run: uv run coverage report
