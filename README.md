@@ -68,6 +68,10 @@ gh secret set BARK_KEY --repo <owner>/checkin_windalice
 ## 已知限制
 
 - **私有接口，会变**。Wind 改版或换网关，脚本就会失效。
+- **别高频调用**。实测：短时间内连发十几次请求后，上游返回
+  `kind: credentials_rejected / reason: refresh_token_rejected_cached`，
+  那套凭据当场作废，只能重新登录。本脚本每天只跑 2 次，远低于触发阈值；
+  你在浏览器里正常使用也不受影响（已在 GitHub 的机器上跨环境验证通过）。
 - **GitHub cron 有 5~30 分钟延迟**，且仓库连续 60 天没有提交会自动停用定时任务。
   本项目不靠提交日志跑，所以：如果哪天发现不跑了，先去 Actions 页面点一下 enable。
 - **只做签到**。兑换码、技能比赛、新手弹窗等其它领积分入口不在范围内。
