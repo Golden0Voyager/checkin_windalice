@@ -244,3 +244,134 @@ def test_real_client_is_used_by_default() -> None:
     built = _build_client(settings())
 
     assert isinstance(built, AliceClient)
+
+
+# --- 凭据到期提醒 ---------------------------------------------------------
+
+from datetime import date  # noqa: E402
+
+EXPIRY = date(2026, 10, 31)
+
+
+def settings_with_expiry(expires_on: date | None) -> Settings:
+    return Settings(
+        credentials=Credentials(
+            refresh_token=FAKE_TOKEN,
+            session_id=FAKE_SESSION,
+            header_session_id=FAKE_HEADER_SESSION,
+        ),
+        bark_key="fake-bark-key",
+        bark_base_url="https://api.day.app",
+        expires_on=expires_on,
+    )
+
+
+def test_reminder_sent_two_days_before_expiry() -> None:
+    notifier = RecordingNotifier()
+
+    run(
+        settings_with_expiry(EXPIRY),
+        client=FakeClient(ALREADY),
+        notifier=notifier,
+        log=lambda _: None,
+        today=date(2026, 10, 29),
+    )
+
+    titles = [title for title, _ in notifier.messages]
+    assert any("到期" in title for title in titles)
+
+
+def test_reminder_not_sent_when_expiry_is_far_away() -> None:
+    notifier = RecordingNotifier()
+
+    run(
+        settings_with_expiry(EXPIRY),
+        client=FakeClient(ALREADY),
+        notifier=notifier,
+        log=lambda _: None,
+        today=date(2026, 10, 24),
+    )
+
+    assert notifier.messages == []
+
+
+def test_reminder_still_sent_when_today_already_claimed() -> None:
+    """「今天已领取」会提前返回，提醒不能被这条捷径吞掉。"""
+    notifier = RecordingNotifier()
+
+    run(
+        settings_with_expiry(EXPIRY),
+        client=FakeClient(ALREADY),
+        notifier=notifier,
+        log=lambda _: None,
+        today=date(2026, 10, 30),
+    )
+
+    assert len(notifier.messages) == 1
+    assert "到期" in notifier.messages[0][0]
+
+
+def test_no_reminder_when_expiry_is_unset() -> None:
+    notifier = RecordingNotifier()
+
+    run(
+        settings_with_expiry(None),
+        client=FakeClient(ALREADY),
+        notifier=notifier,
+        log=lambda _: None,
+        today=date(2026, 10, 30),
+    )
+
+    assert notifier.messages == []
+
+
+def test_no_reminder_after_credentials_already_expired() -> None:
+    """过期了就靠 401 报警，不必再提醒一次。"""
+    notifier = RecordingNotifier()
+
+    run(
+        settings_with_expiry(EXPIRY),
+        client=FakeClient(ALREADY),
+        notifier=notifier,
+        log=lambda _: None,
+        today=date(2026, 11, 2),
+    )
+
+    assert notifier.messages == []
+
+
+def test_reminder_does_not_change_exit_code() -> None:
+    code = run(
+        settings_with_expiry(EXPIRY),
+        client=FakeClient(ALREADY),
+        notifier=RecordingNotifier(),
+        log=lambda _: None,
+        today=date(2026, 10, 30),
+    )
+
+    assert code == 0
+
+
+def test_load_settings_parses_expiry_date() -> None:
+    env = {
+        "WIND_REFRESH_TOKEN": FAKE_TOKEN,
+        "WIND_SESSION_ID": FAKE_SESSION,
+        "WIND_HEADER_SESSION_ID": FAKE_HEADER_SESSION,
+        "WIND_CREDENTIAL_EXPIRES_ON": "2026-10-31",
+    }
+
+    assert load_settings(env).expires_on == date(2026, 10, 31)
+
+
+def test_load_settings_rejects_bad_expiry_date_without_echoing_it() -> None:
+    env = {
+        "WIND_REFRESH_TOKEN": FAKE_TOKEN,
+        "WIND_SESSION_ID": FAKE_SESSION,
+        "WIND_HEADER_SESSION_ID": FAKE_HEADER_SESSION,
+        "WIND_CREDENTIAL_EXPIRES_ON": "31/10/2026",
+    }
+
+    with pytest.raises(ConfigError) as excinfo:
+        load_settings(env)
+
+    assert "WIND_CREDENTIAL_EXPIRES_ON" in str(excinfo.value)
