@@ -19,6 +19,8 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
         with:
+          # 钉死版本：本机 uv 与 CI 的 uv 行为可能不同，不要用本机行为推断 CI。
+          version: "0.13.4"
           python-version: "3.12"
           enable-cache: true
 
@@ -38,3 +40,11 @@ jobs:
 
       - name: Enforce coverage threshold
         run: uv run coverage report
+
+      # 审计读冻结的 lock（与 Dependabot 同源）。
+      # --disable-pip --no-deps 避开 pip-audit 临时 venv 在 uv 托管解释器上的 SIGABRT。
+      # 例外只能按公告 ID 忽略，且必须在下面注释里写明原因与影响面。
+      - name: Audit dependencies
+        run: |
+          uv export --frozen --no-emit-project --format requirements-txt --no-hashes > "$RUNNER_TEMP/requirements.txt"
+          uvx pip-audit@2.10.1 --disable-pip --no-deps -r "$RUNNER_TEMP/requirements.txt" --progress-spinner off
