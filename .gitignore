@@ -1,5 +1,8 @@
 # 探测/调试产物（含实时凭据，绝不能提交）
 .probe/
+
+# git worktree 工作区
+.worktrees/
 .venv/
 __pycache__/
 *.pyc
