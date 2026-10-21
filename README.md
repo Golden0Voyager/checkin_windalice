@@ -43,16 +43,35 @@ Alice 只支持 **手机号 + 短信验证码** 登录，没有账号密码。�
 | `WIND_HEADER_SESSION_ID` | ✅ | 同上 |
 | `BARK_KEY` | 可选 | 不填则不推送，签到照常进行 |
 
+| 仓库变量（不是机密） | 说明 |
+|---|---|
+| `WIND_CREDENTIAL_EXPIRES_ON` | 凭据到期日（`YYYY-MM-DD`），到期前 2 天推 Bark 提醒 |
+
 ```bash
 gh secret set WIND_REFRESH_TOKEN --repo <owner>/checkin_windalice
 gh secret set WIND_SESSION_ID --repo <owner>/checkin_windalice
 gh secret set WIND_HEADER_SESSION_ID --repo <owner>/checkin_windalice
 gh secret set BARK_KEY --repo <owner>/checkin_windalice
+gh variable set WIND_CREDENTIAL_EXPIRES_ON --body 2026-10-31 --repo <owner>/checkin_windalice
 ```
 
-## 重新抓取凭据（凭据过期时）
+## 凭据寿命：10 天（硬上限）
 
-`weaver-auth.refresh-token` 的寿命由 Wind 决定，过期后签到会以 `401` 失败并推送 Bark。
+Wind 给登录态设的是 **10 天绝对过期**，不是「用一次续一次」：
+
+- 实测 Chrome cookie 库里 `weaver-auth.refresh-token` / `session-id` / `access-token` 的到期时间
+  完全一致，都是登录时刻 + 10 天；
+- 实测浏览器正常刷新页面后，这个到期时间**一个微秒都没变**（`delta=+0.0s`），
+  所以天天使用也不会保活。
+
+到期前 2 天，`WIND_CREDENTIAL_EXPIRES_ON` 会触发一条 Bark 提醒；到期后签到失败，同样会推 Bark。
+
+## 重新抓取凭据（每 10 天一次）
+
+**重新登录会生成一整套全新的 cookie（新的 refresh-token 和 session-id），旧的那套随即作废。**
+所以顺序必须是「重登 → 立刻重抓 → 立刻覆盖 Secrets」，中间不要拖到下一次定时任务。
+
+`weaver-auth.refresh-token` 的寿命由 Wind 决定（10 天），过期后签到会以 `401` 失败并推送 Bark。
 恢复步骤：
 
 1. 浏览器登录 <https://alice.wind.com.cn>
@@ -61,7 +80,8 @@ gh secret set BARK_KEY --repo <owner>/checkin_windalice
 4. 复制 `cookie` 里的 `weaver-auth.refresh-token=...` 和 `weaver-auth.session-id=...` 的值
 5. 复制请求头 `wind.sessionid` 的值
 6. `gh secret set <名字>` 覆盖对应 Secret（粘贴时不要带 `名字=` 前缀）
-7. 手动触发一次 `Daily check-in` workflow 验证
+7. `gh variable set WIND_CREDENTIAL_EXPIRES_ON --body <新的到期日>`
+8. 手动触发一次 `Daily check-in` workflow 验证
 
 > 不要把这三个值贴进 issue、PR、聊天记录或任何文件——它们等价于你的登录态。
 
