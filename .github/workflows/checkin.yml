@@ -1,0 +1,48 @@
+name: Daily check-in
+
+# 北京时间 08:00 主跑，21:00 兜底重试。
+# GitHub 的 cron 有 5~30 分钟随机延迟，签到对分钟不敏感，无所谓。
+on:
+  schedule:
+    - cron: "0 0 * * *"
+    - cron: "0 13 * * *"
+  workflow_dispatch:
+
+# 最小权限：只需要读代码，不需要写任何东西。
+permissions:
+  contents: read
+
+concurrency:
+  group: daily-check-in
+  cancel-in-progress: false
+
+jobs:
+  check-in:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Sync dependencies
+        run: uv sync --frozen --no-dev
+
+      - name: Run check-in
+        env:
+          WIND_REFRESH_TOKEN: ${{ secrets.WIND_REFRESH_TOKEN }}
+          WIND_SESSION_ID: ${{ secrets.WIND_SESSION_ID }}
+          WIND_HEADER_SESSION_ID: ${{ secrets.WIND_HEADER_SESSION_ID }}
+          BARK_KEY: ${{ secrets.BARK_KEY }}
+        run: uv run --no-dev checkin-windalice
+
+      - name: Missing secrets hint
+        if: failure()
+        run: |
+          echo "::notice::签到失败了。最常见原因：refresh-token 过期。"
+          echo "::notice::请按 README 的「重新抓取凭据」章节更新 Secrets。"
