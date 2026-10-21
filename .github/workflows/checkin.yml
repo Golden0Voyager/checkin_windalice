@@ -27,6 +27,8 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
         with:
+          # 钉死版本：本机 uv 与 CI 的 uv 行为可能不同，不要用本机行为推断 CI。
+          version: "0.13.4"
           python-version: "3.12"
           enable-cache: true
 
@@ -39,10 +41,12 @@ jobs:
           WIND_SESSION_ID: ${{ secrets.WIND_SESSION_ID }}
           WIND_HEADER_SESSION_ID: ${{ secrets.WIND_HEADER_SESSION_ID }}
           BARK_KEY: ${{ secrets.BARK_KEY }}
+          # 仓库变量（非机密）：凭据到期日，用于提前 2 天提醒重登。
+          WIND_CREDENTIAL_EXPIRES_ON: ${{ vars.WIND_CREDENTIAL_EXPIRES_ON }}
         run: uv run --no-dev checkin-windalice
 
       - name: Missing secrets hint
         if: failure()
         run: |
-          echo "::notice::签到失败了。最常见原因：refresh-token 过期。"
-          echo "::notice::请按 README 的「重新抓取凭据」章节更新 Secrets。"
+          echo "::notice::签到失败了。最常见原因：refresh-token 过期（Wind 的登录态上限是 10 天）。"
+          echo "::notice::请按 README 的「重新抓取凭据」章节更新 Secrets，并同步更新 WIND_CREDENTIAL_EXPIRES_ON。"
