@@ -11,8 +11,10 @@ checkin-windalice = "checkin_windalice.cli:console_entry"
 
 [dependency-groups]
 dev = [
+    "mypy>=1.11",
     "pytest>=8.0",
     "pytest-cov>=5.0",
+    "ruff>=0.6",
 ]
 
 [build-system]
