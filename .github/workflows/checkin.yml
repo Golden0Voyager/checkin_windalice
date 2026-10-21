@@ -43,6 +43,9 @@ jobs:
           BARK_KEY: ${{ secrets.BARK_KEY }}
           # 仓库变量（非机密）：凭据到期日，用于提前 2 天提醒重登。
           WIND_CREDENTIAL_EXPIRES_ON: ${{ vars.WIND_CREDENTIAL_EXPIRES_ON }}
+          # 可选覆盖项，留空即用默认值。
+          BARK_BASE_URL: ${{ vars.BARK_BASE_URL }}
+          WIND_BASE_URL: ${{ vars.WIND_BASE_URL }}
         run: uv run --no-dev checkin-windalice
 
       - name: Missing secrets hint
