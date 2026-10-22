@@ -8,6 +8,7 @@ dependencies = []
 
 [project.scripts]
 checkin-windalice = "checkin_windalice.cli:console_entry"
+checkin-sync = "checkin_windalice.sync:console_entry"
 
 [dependency-groups]
 dev = [

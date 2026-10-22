@@ -14,19 +14,16 @@ Wind Alice 每日签到自动化。每天北京时间 **08:00 / 21:00** 各跑�
 ## 快速开始
 
 ```bash
-# 1. 拿凭据（详见「重新抓取凭据」）
-#    浏览器登录 alice.wind.com.cn → F12 → Network → daily-check-in/status → Request Headers
+git clone https://github.com/Golden0Voyager/checkin_windalice && cd checkin_windalice
+uv sync
 
-# 2. 写进 Secrets
-gh secret set WIND_REFRESH_TOKEN   --repo <owner>/checkin_windalice
-gh secret set WIND_SESSION_ID      --repo <owner>/checkin_windalice
-gh secret set WIND_HEADER_SESSION_ID --repo <owner>/checkin_windalice
-gh secret set BARK_KEY             --repo <owner>/checkin_windalice   # 可选
+# 1. 浏览器里 alice.wind.com.cn 保持登录状态即可，然后一条命令同步凭据 + 到期日
+uv run checkin-sync
 
-# 3. 记下凭据到期日（登录时刻 + 10 天），供到期前提醒用
-gh variable set WIND_CREDENTIAL_EXPIRES_ON --body 2026-10-31 --repo <owner>/checkin_windalice
+# 2. 推送密钥（可选，不填就不推送）
+gh secret set BARK_KEY --repo <owner>/checkin_windalice
 
-# 4. 手动跑一次验证
+# 3. 手动跑一次验证
 gh workflow run checkin.yml --repo <owner>/checkin_windalice
 ```
 
@@ -65,17 +62,23 @@ Alice 只支持 **手机号 + 短信验证码** 登录，没有账号密码，�
 
 只要这三个值有效，脚本**完全不需要浏览器**，一个 `GET` + 一个 `POST` 就够。
 
-## 凭据寿命：10 天（硬上限）
+## 凭据寿命：会被浏览器轮换
 
-Wind 给登录态设的是 **10 天绝对过期**，不是「用一次续一次」。依据（实测，非推测）：
+两条实测结论决定了整套设计：
 
-- Chrome cookie 库里 `weaver-auth.refresh-token` / `session-id` / `access-token` 的
-  到期时间完全一致，都等于「登录时刻 + 10 天」；
-- 让浏览器正常刷新一次页面后，这个到期时间 **一个微秒都没变**（`delta=+0.0s`），
-  说明天天使用也不会续期；
-- `access-token` 本身是 5 小时 JWT（`iat`/`exp` 相差 18000 秒），由网关用 refresh-token 隐式换发。
+- **10 天绝对过期**：cookie 库里 `refresh-token` / `session-id` / `access-token` 的到期时间
+  完全一致，都等于「签发时刻 + 10 天」；
+- **会轮换**：`access-token` 是 5 小时 JWT，浏览器里它一过期，下次访问就会换一整套新票
+  （新 refresh-token + 新 session-id），**旧票当场作废**，同时到期日整体 +10 天。
 
-结论：**不存在一劳永逸的方案**，每 10 天要重新登录一次。所以加了到期前提醒 ↓
+我们自己的请求**不会**触发轮换（实测响应里 `Set-Cookie` 是 **0 条**）。所以：
+
+> **谁最后换票，谁手里那张才有效。**
+
+你在网页版用一次，云端 Secrets 里那份就失效一次，第二天的定时任务会以
+`401 authorization_denied / upstream_rejected` 失败并推 Bark。
+
+这不是代码 bug，是「静态拷贝 + 活跃会话」的结构冲突。应对方式是一条命令重同步 ↓
 
 ## 配置
 
@@ -96,22 +99,46 @@ Wind 给登录态设的是 **10 天绝对过期**，不是「用一次续一次�
 | `BARK_BASE_URL` | 自建 Bark 服务端时使用，默认 `https://api.day.app` |
 | `WIND_BASE_URL` | 默认 `https://alice.wind.com.cn`，一般不用改 |
 
-## 重新抓取凭据（每 10 天一次）
+## 重新同步凭据（一条命令）
 
-> **重新登录会生成一整套全新的 cookie**（新 refresh-token + 新 session-id），旧的那套随即作废。
-> 所以顺序必须是「重登 → 立刻重抓 → 立刻覆盖 Secrets」，别拖到下一次定时任务，
-> 否则中间那段时间签到必然 `401`。
+```bash
+uv run checkin-sync
+```
+
+它做四件事：从 Chrome 的 cookie 库解出**当前有效**的凭据 → 写入 3 个 Secrets →
+更新 `WIND_CREDENTIAL_EXPIRES_ON` → 打一次 status 自检。只会打印长度与哈希，不打印值。
+
+```
+[读取] Profile 1  refresh-token sha=6c631f33  到期=2026-10-31
+[ok] WIND_REFRESH_TOKEN       len=32
+[ok] WIND_SESSION_ID          len=32
+[ok] WIND_HEADER_SESSION_ID   len=32
+[ok] WIND_CREDENTIAL_EXPIRES_ON = 2026-10-31
+[ok] 自检通过：不可领取（今日已领取），奖励 200 积分
+```
+
+前提与细节：
+
+- 浏览器里 `alice.wind.com.cn` 是登录状态（cookie 库默认读 `Profile 1`，
+  可用 `WIND_CHROME_PROFILE` 指向别的 profile）；
+- 首次运行钥匙串会弹窗要「Chrome Safe Storage」，点**始终允许**，以后不再问；
+- 只支持 macOS + Chrome（解密依赖 `security` 与 `openssl`，无第三方依赖）。
+
+<details>
+<summary>不用命令行 / 没有 Chrome：手动抓（点开）</summary>
 
 1. 浏览器登录 <https://alice.wind.com.cn>
 2. `F12` → **Network** → 过滤 `daily-check-in`
 3. 点任意一条 `status` 请求 → **Headers** → **Request Headers**
 4. 复制 `cookie` 里 `weaver-auth.refresh-token=...` 与 `weaver-auth.session-id=...` 的值
-5. 复制请求头 `wind.sessionid` 的值
+5. `wind.sessionid` 请求头可以直接填第 4 步里的 session-id（实测可行）
 6. `gh secret set <名字>` 覆盖对应 Secret（粘贴时**不要**带 `名字=` 前缀）
 7. `gh variable set WIND_CREDENTIAL_EXPIRES_ON --body <新到期日>`
 8. `gh workflow run checkin.yml` 验证
 
-> 这三个值等价于你的登录态：不要贴进 issue、PR、聊天记录，也不要写进任何文件。
+</details>
+
+> 凭据等价于你的登录态：不要贴进 issue、PR、聊天记录，也不要写进任何文件。
 
 ## 排障
 
@@ -137,6 +164,9 @@ uv sync
 uv run pytest --cov      # 47 个测试，覆盖率阈值 85%
 uv run ruff check . && uv run ruff format --check .
 uv run mypy src
+
+# 本机从 Chrome 取票并推送到 GitHub Secrets（含自检）
+uv run checkin-sync
 ```
 
 本地跑一次（凭据只用环境变量，不落盘）：
@@ -154,7 +184,9 @@ src/checkin_windalice/
 ├── _http.py     # 可注入的标准库传输层（HTTP 错误码当正常响应返回）
 ├── client.py    # 签到接口 + 凭据/错误语义，异常永不回显凭据
 ├── notify.py    # Bark 推送，失败只返回 False，永不抛异常
-└── cli.py       # 编排、退出码、到期提醒
+├── cli.py       # 编排、退出码、到期提醒
+├── chrome.py    # 本机取票：解 Chrome cookie 库（PBKDF2 + AES-128-CBC + openssl）
+└── sync.py      # 一条命令把取到的票推回 GitHub Secrets，并自检
 tests/           # 全部走假传输层 + 本地 HTTP 服务，不打真网
 .github/workflows/
 ├── ci.yml       # ruff → ruff format → mypy(软失败) → pytest --cov → coverage → 依赖审计
@@ -172,7 +204,9 @@ tests/           # 全部走假传输层 + 本地 HTTP 服务，不打真网
 ## 已知限制
 
 - **私有接口，会变**。Wind 改版或换网关，脚本立刻失效，需要重新逆向。
-- **凭据 10 天到期**，到期要人工重登一次（提醒已内置）。
+- **凭据会被浏览器轮换**：你在网页版用一次，云端那份就失效。失败后跑
+  `uv run checkin-sync` 即可（一条命令，不用 F12 手抄）。
+- **凭据 10 天绝对到期**：即使完全不轮换，也要每 10 天重新登录一次（提醒已内置）。
 - **别高频调用**：实测连发十几次请求后上游返回 `refresh_token_rejected_cached`，
   那套凭据当场作废。本脚本每天 2 次，远低于阈值；你在浏览器里的正常使用也不受影响
   （已在 GitHub 的机器上跨环境验证通过）。
