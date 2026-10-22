@@ -39,6 +39,10 @@ warn_unused_ignores = true
 warn_redundant_casts = true
 no_implicit_optional = true
 
+# uv 版本的唯一声明点：本机与 CI 都读这里，不匹配就直接拒绝执行。
+[tool.uv]
+required-version = "0.13.4"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
