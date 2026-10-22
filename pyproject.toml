@@ -40,8 +40,10 @@ warn_redundant_casts = true
 no_implicit_optional = true
 
 # uv 版本的唯一声明点：本机与 CI 都读这里，不匹配就直接拒绝执行。
+# 用下限而非精确钉住：0.13.5 及以后任意版本都能跑，更旧的仍被拒绝；
+# 升 uv 只需改这一行。
 [tool.uv]
-required-version = "0.13.4"
+required-version = ">=0.13.5"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
