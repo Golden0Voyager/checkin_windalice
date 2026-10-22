@@ -19,8 +19,6 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
         with:
-          # 钉死版本：本机 uv 与 CI 的 uv 行为可能不同，不要用本机行为推断 CI。
-          version: "0.13.4"
           python-version: "3.12"
           enable-cache: true
 
